@@ -7,7 +7,6 @@ substitutions:
   friendly_name: "Waveshare ESP32-S3-RLCD-4.2"
 
 .variables:
-  # to modify
   - &weather_entity "weather.forecast_maison"
 
 esphome:
@@ -194,9 +193,14 @@ font:
     size: 24
     bpp: 4
     glyphs:
-      - "\U000F05A9" # mdi:wifi
       - "\U000F05AA" # mdi:wifi-off
+      - "\U000F092F" # mdi:wifi-strength-outline (0 bars / very weak)
+      - "\U000F091F" # mdi:wifi-strength-1
+      - "\U000F0922" # mdi:wifi-strength-2
+      - "\U000F0925" # mdi:wifi-strength-3
+      - "\U000F0928" # mdi:wifi-strength-4
       - "\U000F036D" # mdi:microphone-off
+      - "\U000F05A9" # mdi:wifi
 
   - file: "gfonts://Roboto"
     id: font_small
@@ -234,11 +238,24 @@ display:
         it.print(12, 20, id(font_mdi_status), Color::WHITE, TextAlign::CENTER_LEFT, "\U000F036D");
       }
 
-      // Icône Wi-Fi en haut à droite (blanc sur fond noir)
+      // Wi-Fi signal strength icon in top-right (white on black header)
       if (id(wifi_component).is_connected()) {
-        it.print(388, 20, id(font_mdi_status), Color::WHITE, TextAlign::CENTER_RIGHT, "\U000F05A9");
+        float rssi = id(wifi_signal_db).has_state() ? id(wifi_signal_db).state : -100.0f;
+        const char* wifi_icon = "\U000F0928"; // Default: 4 bars
+        if (rssi >= -55.0f) {
+          wifi_icon = "\U000F0928"; // mdi:wifi-strength-4 (Excellent)
+        } else if (rssi >= -67.0f) {
+          wifi_icon = "\U000F0925"; // mdi:wifi-strength-3 (Good)
+        } else if (rssi >= -75.0f) {
+          wifi_icon = "\U000F0922"; // mdi:wifi-strength-2 (Fair)
+        } else if (rssi >= -85.0f) {
+          wifi_icon = "\U000F091F"; // mdi:wifi-strength-1 (Weak)
+        } else {
+          wifi_icon = "\U000F092F"; // mdi:wifi-strength-outline (Very weak)
+        }
+        it.print(388, 20, id(font_mdi_status), Color::WHITE, TextAlign::CENTER_RIGHT, wifi_icon);
       } else {
-        it.print(388, 20, id(font_mdi_status), Color::WHITE, TextAlign::CENTER_RIGHT, "\U000F05AA");
+        it.print(388, 20, id(font_mdi_status), Color::WHITE, TextAlign::CENTER_RIGHT, "\U000F05AA"); // mdi:wifi-off
       }
 
       // Séparateurs principaux
@@ -432,6 +449,15 @@ sensor:
     internal: false
     filters:
       - throttle: 15min
+
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    id: wifi_signal_db
+    update_interval: 60s
+    entity_category: "diagnostic"
+    on_value:
+      - component.update: my_display
+        
 #----------------------------
 
 #=============================================================
