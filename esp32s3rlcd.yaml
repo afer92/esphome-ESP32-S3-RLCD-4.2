@@ -129,7 +129,10 @@ globals:
     type: int
     restore_value: yes
     initial_value: "-1"
-
+  - id: gweather_next
+    type: std::string
+    restore_value: yes
+    initial_value: '"--"'
     
 #=============================================================
 # RTC
@@ -290,46 +293,51 @@ display:
       float h_in = id(hum_sensor).has_state() ? id(hum_sensor).state : id(ghum);
       it.printf(15, 130, id(font_label), Color::BLACK, "Humidité : %.0f %%", h_in);
 
-      // 2B. Colonne Droite : EXTÉRIEUR (x = 200 -> 400)
-      it.print(215, 48, id(font_label), Color::BLACK, "EXTÉRIEUR");
+      // 2B. Colonne Droite : EXTÉRIEUR (x = 200 -> 400, y = 40 -> 160)
+      it.print(215, 44, id(font_label), Color::BLACK, "EXTÉRIEUR");
       if (id(ha_weather_temperature).has_state()) {
-        it.printf(215, 72, id(font_value), Color::BLACK, "%.1f", id(ha_weather_temperature).state);
+        it.printf(215, 64, id(font_value), Color::BLACK, "%.1f", id(ha_weather_temperature).state);
       } else if (id(gweather_temp) > -100.0) {
-        it.printf(215, 72, id(font_value), Color::BLACK, "%.1f", id(gweather_temp));
+        it.printf(215, 64, id(font_value), Color::BLACK, "%.1f", id(gweather_temp));
       } else {
-        it.print(215, 72, id(font_value), Color::BLACK, "--.-");
+        it.print(215, 64, id(font_value), Color::BLACK, "--.-");
       }
-      it.print(312, 78, id(font_label), Color::BLACK, "°C");
+      it.print(312, 70, id(font_label), Color::BLACK, "°C");
 
-      // Humidité extérieure (y = 123) et Vitesse du vent (y = 141) en police 14 px
-      if (id(ha_weather_humidity).has_state()) {
-        it.printf(215, 123, id(font_small), Color::BLACK, "Humidité : %.0f %%", id(ha_weather_humidity).state);
-      } else if (id(gweather_hum) >= 0.0) {
-        it.printf(215, 123, id(font_small), Color::BLACK, "Humidité : %.0f %%", id(gweather_hum));
-      } else {
-        it.print(215, 123, id(font_small), Color::BLACK, "Humidité : -- %");
-      }
-
-      const char* wind_dirs[] = { "N", "NE", "E", "SE", "S", "SO", "O", "NO" };
-      const char* dir_str = (id(gweather_wind_dir) >= 0 && id(gweather_wind_dir) <= 7)
-                            ? wind_dirs[id(gweather_wind_dir)] : "--";
-
-      if (id(ha_weather_wind).has_state()) {
-        it.printf(215, 141, id(font_small), Color::BLACK, "Vent : %.0f km/h (%s)", id(ha_weather_wind).state, dir_str);
-      } else if (id(gweather_wind) >= 0.0) {
-        it.printf(215, 141, id(font_small), Color::BLACK, "Vent : %.0f km/h (%s)", id(gweather_wind), dir_str);
-      } else {
-        it.print(215, 141, id(font_small), Color::BLACK, "Vent : -- km/h");
-      }
-
-      // Icône météo remontée à y = 72 pour laisser la place au texte en dessous
+      // Icône météo en haut à droite
       const char* weather_icons[] = {
         "\U000F0590", "\U000F0599", "\U000F0595", "\U000F0597",
         "\U000F0596", "\U000F0598", "\U000F0593", "\U000F0592",
         "\U000F059D", "\U000F0591"
       };
       int w_idx = (id(gweather) >= 0 && id(gweather) <= 9) ? id(gweather) : 0;
-      it.print(345, 72, id(font_mdi_weather), Color::BLACK, weather_icons[w_idx]);
+      it.print(345, 64, id(font_mdi_weather), Color::BLACK, weather_icons[w_idx]);
+
+      // Ligne 1 (y = 112) : Humidité extérieure
+      if (id(ha_weather_humidity).has_state()) {
+        it.printf(215, 112, id(font_small), Color::BLACK, "Hum. : %.0f %%", id(ha_weather_humidity).state);
+      } else if (id(gweather_hum) >= 0.0) {
+        it.printf(215, 112, id(font_small), Color::BLACK, "Hum. : %.0f %%", id(gweather_hum));
+      } else {
+        it.print(215, 112, id(font_small), Color::BLACK, "Hum. : -- %");
+      }
+
+      // Ligne 2 (y = 128) : Vitesse et direction du vent
+      const char* wind_dirs[] = { "N", "NE", "E", "SE", "S", "SO", "O", "NO" };
+      const char* dir_str = (id(gweather_wind_dir) >= 0 && id(gweather_wind_dir) <= 7)
+                            ? wind_dirs[id(gweather_wind_dir)] : "--";
+      if (id(ha_weather_wind).has_state()) {
+        it.printf(215, 128, id(font_small), Color::BLACK, "Vent : %.0f km/h (%s)", id(ha_weather_wind).state, dir_str);
+      } else if (id(gweather_wind) >= 0.0) {
+        it.printf(215, 128, id(font_small), Color::BLACK, "Vent : %.0f km/h (%s)", id(gweather_wind), dir_str);
+      } else {
+        it.print(215, 128, id(font_small), Color::BLACK, "Vent : -- km/h");
+      }
+
+      // Ligne 3 (y = 144) : Prochain changement de météo
+      std::string next_str = id(ha_weather_next).has_state() ? id(ha_weather_next).state : id(gweather_next);
+      it.printf(215, 144, id(font_small), Color::BLACK, "Ensuite : %s", next_str.c_str());
+
 
       // 3. Zone Batterie (160 -> 245 px)
       it.print(15, 170, id(font_label), Color::BLACK, "BATTERIE");
@@ -572,6 +580,15 @@ text_sensor:
       id: wifi_ssid_sensor
       on_value:
         - component.update: my_display          
+
+  - platform: homeassistant
+    id: ha_weather_next
+    entity_id: sensor.meteo_prochain_changement
+    on_value:
+      - globals.set:
+          id: gweather_next
+          value: !lambda 'return x;'
+      - component.update: my_display          
           
 #=============================================================
 # Voice Assistant Configuration
