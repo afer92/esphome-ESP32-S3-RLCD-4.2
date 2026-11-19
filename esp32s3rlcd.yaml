@@ -125,6 +125,10 @@ globals:
     type: float
     restore_value: yes
     initial_value: "-1.0"
+  - id: gweather_wind_dir
+    type: int
+    restore_value: yes
+    initial_value: "-1"
 
     
 #=============================================================
@@ -306,10 +310,14 @@ display:
         it.print(215, 123, id(font_small), Color::BLACK, "Humidité : -- %");
       }
 
+      const char* wind_dirs[] = { "N", "NE", "E", "SE", "S", "SO", "O", "NO" };
+      const char* dir_str = (id(gweather_wind_dir) >= 0 && id(gweather_wind_dir) <= 7)
+                            ? wind_dirs[id(gweather_wind_dir)] : "--";
+
       if (id(ha_weather_wind).has_state()) {
-        it.printf(215, 141, id(font_small), Color::BLACK, "Vent : %.0f km/h", id(ha_weather_wind).state);
+        it.printf(215, 141, id(font_small), Color::BLACK, "Vent : %.0f km/h (%s)", id(ha_weather_wind).state, dir_str);
       } else if (id(gweather_wind) >= 0.0) {
-        it.printf(215, 141, id(font_small), Color::BLACK, "Vent : %.0f km/h", id(gweather_wind));
+        it.printf(215, 141, id(font_small), Color::BLACK, "Vent : %.0f km/h (%s)", id(gweather_wind), dir_str);
       } else {
         it.print(215, 141, id(font_small), Color::BLACK, "Vent : -- km/h");
       }
@@ -487,6 +495,20 @@ sensor:
     internal: false
     filters:
       - throttle: 15min
+        
+  - platform: homeassistant
+    id: ha_weather_wind_bearing
+    entity_id: *weather_entity
+    attribute: wind_bearing
+    internal: false
+    filters:
+      - throttle: 15min
+    on_value:
+      - lambda: |-
+          // Convertit 0-360° en 8 secteurs de 45° (0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SO, 6=O, 7=NO)
+          int idx = ((int)((x + 22.5f) / 45.0f)) % 8;
+          if (idx < 0) idx += 8;
+          id(gweather_wind_dir) = idx;
         
 #----------------------------
 
