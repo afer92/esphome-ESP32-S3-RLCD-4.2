@@ -26,7 +26,7 @@ esphome:
                 - switch.is_on: prevent_sleep
             then:
               - lambda: |- 
-                  ESP_LOGW("Apollo", "Preventing Deep Sleep Due To OTA On Boot");
+                  ESP_LOGW("Apollo", "Preventing Deep Sleep Due To  On Boot");
                   id(deep_sleep_1).prevent_deep_sleep();
 
   on_shutdown:
@@ -668,6 +668,7 @@ text_sensor:
           } else {
             id(gweather) = 0;
           }
+      - component.update: my_display
 
   - platform: wifi_info
     ip_address:
@@ -884,7 +885,7 @@ binary_sensor:
   - platform: homeassistant
     name: "OTA Mode"
     id: ota_mode
-    entity_id: input_boolean.ota_mod_ccb4fc
+    entity_id: input_boolean.ota_mod
     on_press:
       then:
         - lambda: |- 
