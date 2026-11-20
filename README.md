@@ -2,7 +2,7 @@
 
 🌐 **[English](#-english)** | **[Français](#-français)**
 
-![Screen](docs/20261119_esp32-s3-rlcd-4.2.jpg)
+![Screen](docs/screen.jpg)
 
 ---
 
