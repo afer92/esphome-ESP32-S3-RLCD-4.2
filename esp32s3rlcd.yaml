@@ -7,7 +7,7 @@ substitutions:
   friendly_name: "Waveshare ESP32-S3-RLCD-4.2"
 
 .variables:
-  - &weather_entity "weather.forecast_maison"
+  - &weather_entity "weather.forecast_home"
 
 esphome:
   name: "${name}"
@@ -173,7 +173,7 @@ spi:
 font:
   - file: "gfonts://Roboto"
     id: font_label
-    size: 18
+    size: 16
     glyphs: &ma_glyphs
       - " "
       - "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -184,47 +184,62 @@ font:
       - "àâäáãåçéèêëíìîïñóòôöõúùûüýÿ"
       - "ÀÂÄÁÃÅÇÉÈÊËÍÌÎÏÑÓÒÔÖÕÚÙÛÜÝ"
       - "`œŒæÆ"
+
   - file: "gfonts://Roboto@700"
     id: font_value
-    size: 48
+    size: 56
     glyphs: *ma_glyphs
+
+  - file: "gfonts://Roboto@700"
+    id: font_humidity
+    size: 28
+    glyphs: *ma_glyphs
+
   - file: "gfonts://Roboto"
     id: font_title
-    size: 22
+    size: 20
     glyphs: *ma_glyphs
 
   - file: "fonts/materialdesignicons-webfont.ttf"
     id: font_mdi_weather
-    size: 48
-    bpp: 4
+    size: 42
     glyphs:
       - "\U000F0590" # weather-cloudy
-      - "\U000F0592" # weather-hail
-      - "\U000F0593" # weather-lightning
-      - "\U000F0595" # weather-partly-cloudy
-      - "\U000F0596" # weather-pouring
-      - "\U000F0597" # weather-rainy
-      - "\U000F0598" # weather-snowy
       - "\U000F0599" # weather-sunny
-      - "\U000F059D" # 8: mdi:weather-windy
-      - "\U000F0591" # 9: mdi:weather-fog
+      - "\U000F0595" # weather-partly-cloudy
+      - "\U000F0597" # weather-rainy
+      - "\U000F0596" # weather-pouring
+      - "\U000F0598" # weather-snowy
+      - "\U000F0593" # weather-lightning
+      - "\U000F0592" # weather-fog
+      - "\U000F059D" # weather-windy
+      - "\U000F0591" # weather-night
+
   - file: "fonts/materialdesignicons-webfont.ttf"
     id: font_mdi_status
     size: 24
-    bpp: 4
     glyphs:
-      - "\U000F05AA" # mdi:wifi-off
-      - "\U000F092F" # mdi:wifi-strength-outline (0 bars / very weak)
-      - "\U000F091F" # mdi:wifi-strength-1
-      - "\U000F0922" # mdi:wifi-strength-2
-      - "\U000F0925" # mdi:wifi-strength-3
-      - "\U000F0928" # mdi:wifi-strength-4
-      - "\U000F036D" # mdi:microphone-off
-      - "\U000F05A9" # mdi:wifi
+      - "\U000F036D" # microphone-off
+      - "\U000F0928" # wifi-strength-4
+      - "\U000F0925" # wifi-strength-3
+      - "\U000F0922" # wifi-strength-2
+      - "\U000F091F" # wifi-strength-1
+      - "\U000F092F" # wifi-strength-outline
+      - "\U000F05AA" # wifi-off
+      - "\U000F058C" # water (humidité intérieure)
+      - "\U000F02DC" # home (icône Intérieur)
+      - "\U000F0405" # pine-tree (icône Extérieur)
+
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: font_mdi_inline
+    size: 19
+    glyphs:
+      - "\U000F058C" # water (humidité extérieure)
+      - "\U000F059D" # weather-windy (vent extérieur)
 
   - file: "gfonts://Roboto"
     id: font_small
-    size: 14
+    size: 13
     glyphs: *ma_glyphs
 
 color:
@@ -236,7 +251,7 @@ color:
     red: 0%
     green: 0%
     blue: 0%
-    
+
 display:
   - platform: st7305
     model: WAVESHARE-400X300
@@ -246,6 +261,9 @@ display:
     reset_pin: GPIO41
     update_interval: 1min
     lambda: |-
+      char buf[32];
+      int x1, y1, w, h;
+
       // 1. Remplir l'écran en blanc (fond)
       it.fill(Color::WHITE);
 
@@ -253,111 +271,124 @@ display:
       it.filled_rectangle(0, 0, 400, 40, Color::BLACK);
       it.print(200, 20, id(font_title), Color::WHITE, TextAlign::CENTER, "ESP32-S3-RLCD-4.2");
 
-      // Icône Micro Muet en haut à gauche (affichée uniquement si Mute est activé)
       if (id(mute_switch).state) {
         it.print(12, 20, id(font_mdi_status), Color::WHITE, TextAlign::CENTER_LEFT, "\U000F036D");
       }
 
-      // Wi-Fi signal strength icon in top-right (white on black header)
       if (id(wifi_component).is_connected()) {
         float rssi = id(wifi_signal_db).has_state() ? id(wifi_signal_db).state : -100.0f;
-        const char* wifi_icon = "\U000F0928"; // Default: 4 bars
+        const char* wifi_icon = "\U000F0928";
         if (rssi >= -55.0f) {
-          wifi_icon = "\U000F0928"; // mdi:wifi-strength-4 (Excellent)
+          wifi_icon = "\U000F0928";
         } else if (rssi >= -67.0f) {
-          wifi_icon = "\U000F0925"; // mdi:wifi-strength-3 (Good)
+          wifi_icon = "\U000F0925";
         } else if (rssi >= -75.0f) {
-          wifi_icon = "\U000F0922"; // mdi:wifi-strength-2 (Fair)
+          wifi_icon = "\U000F0922";
         } else if (rssi >= -85.0f) {
-          wifi_icon = "\U000F091F"; // mdi:wifi-strength-1 (Weak)
+          wifi_icon = "\U000F091F";
         } else {
-          wifi_icon = "\U000F092F"; // mdi:wifi-strength-outline (Very weak)
+          wifi_icon = "\U000F092F";
         }
         it.print(388, 20, id(font_mdi_status), Color::WHITE, TextAlign::CENTER_RIGHT, wifi_icon);
       } else {
-        it.print(388, 20, id(font_mdi_status), Color::WHITE, TextAlign::CENTER_RIGHT, "\U000F05AA"); // mdi:wifi-off
+        it.print(388, 20, id(font_mdi_status), Color::WHITE, TextAlign::CENTER_RIGHT, "\U000F05AA");
       }
 
-      // Séparateurs principaux
-      it.line(200, 40, 200, 160, Color::BLACK); // Séparation verticale milieu (Intérieur / Extérieur)
-      it.line(0, 160, 400, 160, Color::BLACK);  // Séparation horizontale sous climat
-      it.line(0, 245, 400, 245, Color::BLACK);  // Séparation horizontale au-dessus de l'heure
+      // Séparateurs principaux (Zone 2 : 40 -> 215 px)
+      it.line(200, 40, 200, 215, Color::BLACK);
+      it.line(0, 215, 400, 215, Color::BLACK);
+      it.line(0, 245, 400, 245, Color::BLACK);
 
-      // 2A. Colonne Gauche : INTÉRIEUR (x = 0 -> 200)
-      it.print(15, 48, id(font_label), Color::BLACK, "INTÉRIEUR");
+      // 2A. Colonne Gauche : INTÉRIEUR (x = 0 -> 200, y = 40 -> 215)
+      it.print(15, 48, id(font_mdi_status), Color::BLACK, "\U000F02DC"); // Icône Maison
+
       float t_in = id(temp_sensor).has_state() ? id(temp_sensor).state : id(gtemp);
-      it.printf(15, 72, id(font_value), Color::BLACK, "%.1f", t_in);
-      it.print(112, 78, id(font_label), Color::BLACK, "°C");
+      snprintf(buf, sizeof(buf), "%.1f", t_in);
+      it.print(15, 78, id(font_value), Color::BLACK, buf);
+      it.get_text_bounds(15, 78, buf, id(font_value), TextAlign::TOP_LEFT, &x1, &y1, &w, &h);
+      it.print(15 + w + 4, 86, id(font_label), Color::BLACK, "°C");
 
-      // Humidité alignée sous la température intérieure
+      // Humidité intérieure : Icône goutte d'eau + valeur agrandie (28 px)
       float h_in = id(hum_sensor).has_state() ? id(hum_sensor).state : id(ghum);
-      it.printf(15, 130, id(font_label), Color::BLACK, "Humidité : %.0f %%", h_in);
+      it.print(15, 185, id(font_mdi_status), Color::BLACK, TextAlign::CENTER_LEFT, "\U000F058C");
+      snprintf(buf, sizeof(buf), "%.0f %%", h_in);
+      it.print(44, 185, id(font_humidity), Color::BLACK, TextAlign::CENTER_LEFT, buf);
 
-      // 2B. Colonne Droite : EXTÉRIEUR (x = 200 -> 400, y = 40 -> 160)
-      it.print(215, 44, id(font_label), Color::BLACK, "EXTÉRIEUR");
+      // 2B. Colonne Droite : EXTÉRIEUR (x = 200 -> 400, y = 40 -> 215)
+      it.print(215, 48, id(font_mdi_status), Color::BLACK, "\U000F0405"); // Icône Sapin (Extérieur)
+
       if (id(ha_weather_temperature).has_state()) {
-        it.printf(215, 64, id(font_value), Color::BLACK, "%.1f", id(ha_weather_temperature).state);
-      } else if (id(gweather_temp) > -100.0) {
-        it.printf(215, 64, id(font_value), Color::BLACK, "%.1f", id(gweather_temp));
+        snprintf(buf, sizeof(buf), "%.1f", id(ha_weather_temperature).state);
+      } else if (id(gweather_temp) > -100.0f) {
+        snprintf(buf, sizeof(buf), "%.1f", id(gweather_temp));
       } else {
-        it.print(215, 64, id(font_value), Color::BLACK, "--.-");
+        snprintf(buf, sizeof(buf), "--.-");
       }
-      it.print(312, 70, id(font_label), Color::BLACK, "°C");
+      it.print(212, 74, id(font_value), Color::BLACK, buf);
+      it.get_text_bounds(212, 74, buf, id(font_value), TextAlign::TOP_LEFT, &x1, &y1, &w, &h);
+      it.print(212 + w + 3, 82, id(font_label), Color::BLACK, "°C");
 
-      // Icône météo en haut à droite
+      // Icône météo calée à droite
       const char* weather_icons[] = {
-        "\U000F0590", "\U000F0599", "\U000F0595", "\U000F0597",
-        "\U000F0596", "\U000F0598", "\U000F0593", "\U000F0592",
-        "\U000F059D", "\U000F0591"
+        "\U000F0590", "\U000F0599", "\U000F0595", "\U000F0597", "\U000F0596",
+        "\U000F0598", "\U000F0593", "\U000F0592", "\U000F059D", "\U000F0591"
       };
       int w_idx = (id(gweather) >= 0 && id(gweather) <= 9) ? id(gweather) : 0;
-      it.print(345, 64, id(font_mdi_weather), Color::BLACK, weather_icons[w_idx]);
+      it.print(392, 74, id(font_mdi_weather), Color::BLACK, TextAlign::TOP_RIGHT, weather_icons[w_idx]);
 
-      // Ligne 1 (y = 112) : Humidité extérieure
+      // Ligne 1 (y = 142) : Icône goutte d'eau + Humidité extérieure (font_label)
+      it.print(215, 142, id(font_mdi_inline), Color::BLACK, TextAlign::CENTER_LEFT, "\U000F058C");
       if (id(ha_weather_humidity).has_state()) {
-        it.printf(215, 112, id(font_small), Color::BLACK, "Hum. : %.0f %%", id(ha_weather_humidity).state);
-      } else if (id(gweather_hum) >= 0.0) {
-        it.printf(215, 112, id(font_small), Color::BLACK, "Hum. : %.0f %%", id(gweather_hum));
+        it.printf(239, 142, id(font_label), Color::BLACK, TextAlign::CENTER_LEFT, "%.0f %%", id(ha_weather_humidity).state);
+      } else if (id(gweather_hum) >= 0.0f) {
+        it.printf(239, 142, id(font_label), Color::BLACK, TextAlign::CENTER_LEFT, "%.0f %%", id(gweather_hum));
       } else {
-        it.print(215, 112, id(font_small), Color::BLACK, "Hum. : -- %");
+        it.print(239, 142, id(font_label), Color::BLACK, TextAlign::CENTER_LEFT, "-- %");
       }
 
-      // Ligne 2 (y = 128) : Vitesse et direction du vent
+      // Ligne 2 (y = 164) : Icône vent + Vitesse et direction (font_label)
       const char* wind_dirs[] = { "N", "NE", "E", "SE", "S", "SO", "O", "NO" };
-      const char* dir_str = (id(gweather_wind_dir) >= 0 && id(gweather_wind_dir) <= 7)
-                            ? wind_dirs[id(gweather_wind_dir)] : "--";
+      const char* dir_str = (id(gweather_wind_dir) >= 0 && id(gweather_wind_dir) <= 7) ? wind_dirs[id(gweather_wind_dir)] : "--";
+      it.print(215, 164, id(font_mdi_inline), Color::BLACK, TextAlign::CENTER_LEFT, "\U000F059D");
       if (id(ha_weather_wind).has_state()) {
-        it.printf(215, 128, id(font_small), Color::BLACK, "Vent : %.0f km/h (%s)", id(ha_weather_wind).state, dir_str);
-      } else if (id(gweather_wind) >= 0.0) {
-        it.printf(215, 128, id(font_small), Color::BLACK, "Vent : %.0f km/h (%s)", id(gweather_wind), dir_str);
+        it.printf(239, 164, id(font_label), Color::BLACK, TextAlign::CENTER_LEFT, "%.0f km/h (%s)", id(ha_weather_wind).state, dir_str);
+      } else if (id(gweather_wind) >= 0.0f) {
+        it.printf(239, 164, id(font_label), Color::BLACK, TextAlign::CENTER_LEFT, "%.0f km/h (%s)", id(gweather_wind), dir_str);
       } else {
-        it.print(215, 128, id(font_small), Color::BLACK, "Vent : -- km/h");
+        it.print(239, 164, id(font_label), Color::BLACK, TextAlign::CENTER_LEFT, "-- km/h");
       }
 
-      // Ligne 3 (y = 144) : Prochain changement de météo
+      // Ligne 3 (y = 188) : Prochain changement de météo (font_label)
       std::string next_str = id(ha_weather_next).has_state() ? id(ha_weather_next).state : id(gweather_next);
-      it.printf(215, 144, id(font_small), Color::BLACK, "Ensuite : %s", next_str.c_str());
+      it.printf(215, 188, id(font_label), Color::BLACK, TextAlign::CENTER_LEFT, "Ensuite : %s", next_str.c_str());
 
+      // 3. Zone Batterie en ligne avec largeur de jauge calculée dynamiquement (215 -> 245 px)
+      const char* bat_label = "BATTERIE";
+      it.print(15, 230, id(font_label), Color::BLACK, TextAlign::CENTER_LEFT, bat_label);
+      it.get_text_bounds(15, 230, bat_label, id(font_label), TextAlign::CENTER_LEFT, &x1, &y1, &w, &h);
+      int bx = 15 + w + 10;
 
-      // 3. Zone Batterie (160 -> 245 px)
-      it.print(15, 170, id(font_label), Color::BLACK, "BATTERIE");
       float current_bat = id(bat_level).has_state() ? id(bat_level).state : id(gbat);
       float current_volt = id(bat_voltage).has_state() ? id(bat_voltage).state : id(gvolt);
-      it.printf(385, 170, id(font_label), Color::BLACK, TextAlign::TOP_RIGHT, "%.2f V (%.0f%%)", current_volt, current_bat);
+      snprintf(buf, sizeof(buf), "%.2fV (%.0f%%)", current_volt, current_bat);
+      it.print(385, 230, id(font_label), Color::BLACK, TextAlign::CENTER_RIGHT, buf);
+      it.get_text_bounds(385, 230, buf, id(font_label), TextAlign::CENTER_RIGHT, &x1, &y1, &w, &h);
 
-      // Barre de progression batterie
-      int bx = 15, by = 198, bw = 370, bh = 32;
-      it.rectangle(bx, by, bw, bh, Color::BLACK);
-      // Petit plot positif à droite de la batterie pour le style
-      it.filled_rectangle(bx + bw, by + 8, 4, bh - 16, Color::BLACK);
+      int bw = (385 - w - 14) - bx;
+      int by = 222, bh = 16;
 
-      int fill = (int)((bw - 6) * current_bat / 100.0);
-      if (fill > bw - 6) fill = bw - 6;
-      if (fill > 0) {
-        it.filled_rectangle(bx + 3, by + 3, fill, bh - 6, Color::BLACK);
+      if (bw > 20) {
+        it.rectangle(bx, by, bw, bh, Color::BLACK);
+        it.filled_rectangle(bx + bw, by + 4, 3, bh - 8, Color::BLACK);
+
+        float clamped_bat = (current_bat < 0.0f) ? 0.0f : ((current_bat > 100.0f) ? 100.0f : current_bat);
+        int fill = (int)((bw - 4) * clamped_bat / 100.0f);
+        if (fill > 0) {
+          it.filled_rectangle(bx + 2, by + 2, fill, bh - 4, Color::BLACK);
+        }
       }
 
-      // 4. Pied de page : Heure à gauche, SSID + IP empilés au centre, Date à droite (245 -> 300 px)
+      // 4. Pied de page : Heure à gauche, SSID + IP au centre, Date à droite (245 -> 300 px)
       auto now = id(esptime).now();
       if (now.is_valid()) {
         it.strftime(15, 262, id(font_label), Color::BLACK, TextAlign::TOP_LEFT, "%H:%M", now);
@@ -367,7 +398,6 @@ display:
         it.print(385, 262, id(font_label), Color::BLACK, TextAlign::TOP_RIGHT, "--/--/----");
       }
 
-      // SSID (ligne du haut) et Adresse IP (ligne du bas) centrés
       if (id(wifi_component).is_connected()) {
         if (id(wifi_ssid_sensor).has_state()) {
           it.printf(200, 254, id(font_small), Color::BLACK, TextAlign::TOP_CENTER, "%s", id(wifi_ssid_sensor).state.c_str());
