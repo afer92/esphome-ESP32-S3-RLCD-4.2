@@ -82,6 +82,7 @@ wifi:
     static_ip: 192.168.0.102 # Remplacez par une IP libre de votre réseau
     gateway: 192.168.0.254
     subnet: 255.255.255.0
+    dns1: 192.168.0.254
   on_connect:
     - pcf85063.write_time:
     - component.update: my_display
@@ -133,6 +134,10 @@ globals:
     type: std::string
     restore_value: yes
     initial_value: '"--"'
+  - id: gva_listening
+    type: bool
+    restore_value: no
+    initial_value: "false"
     
 #=============================================================
 # RTC
@@ -241,6 +246,7 @@ font:
     id: font_mdi_status
     size: 24
     glyphs:
+      - "\U000F036C" # microphone (actif / écoute)
       - "\U000F036D" # microphone-off
       - "\U000F0928" # wifi-strength-4
       - "\U000F0925" # wifi-strength-3
@@ -300,8 +306,11 @@ display:
       it.filled_rectangle(0, 0, 400, 40, Color::BLACK);
       it.print(200, 20, id(font_title), Color::WHITE, TextAlign::CENTER, "ESP32-S3-RLCD-4.2");
 
+      // Icône Micro en haut à gauche : Muet prioritaire, sinon Micro actif pendant l'écoute
       if (id(mute_switch).state) {
         it.print(12, 20, id(font_mdi_status), Color::WHITE, TextAlign::CENTER_LEFT, "\U000F036D");
+      } else if (id(gva_listening)) {
+        it.print(12, 20, id(font_mdi_status), Color::WHITE, TextAlign::CENTER_LEFT, "\U000F036C");
       }
 
       if (id(wifi_component).is_connected()) {
@@ -752,15 +761,21 @@ micro_wake_word:
     channels: 0
     gain_factor: 4
   vad:
+    probability_cutoff: 0.15
   models:
-    - model: hey_jarvis
+    - model: okay_nabu
   on_wake_word_detected:
+    - micro_wake_word.stop:
+    - globals.set:
+        id: gva_listening
+        value: "true"
+    - component.update: my_display
     - media_player.speaker.play_on_device_media_file:
         media_file: wake_word_triggered_sound
         announcement: true
     - delay: 300ms
     - voice_assistant.start:
-        wake_word: !lambda return wake_word;
+
 
 voice_assistant:
   id: va
@@ -773,14 +788,33 @@ voice_assistant:
   use_wake_word: false
   noise_suppression_level: 2
   auto_gain: 31dBFS
+  on_start:
+    - globals.set:
+        id: gva_listening
+        value: "true"
+    - component.update: my_display
+  on_listening:
+    - globals.set:
+        id: gva_listening
+        value: "true"
+    - component.update: my_display
   on_error:
+    - globals.set:
+        id: gva_listening
+        value: "false"
+    - component.update: my_display
     - script.execute: restart_mww
   on_end:
+    - globals.set:
+        id: gva_listening
+        value: "false"
+    - component.update: my_display
     - script.execute: restart_mww
   on_client_connected:
     - micro_wake_word.start:
   on_client_disconnected:
     - micro_wake_word.stop:
+
 
 script:
   - id: restart_mww
