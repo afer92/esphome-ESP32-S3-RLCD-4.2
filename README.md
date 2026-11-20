@@ -156,6 +156,7 @@ Avant de compiler et flasher `esp32s3rlcd.yaml`, adaptez les éléments suivants
        static_ip: 192.168.0.102
        gateway: 192.168.0.254
        subnet: 255.255.255.0
+       dns1: 192.168.0.254
    ```
 
 3. **Entités Home Assistant** :
