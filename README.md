@@ -73,6 +73,44 @@ Before compiling and flashing `esp32s3rlcd.yaml`, update the following parameter
 * Turn off **Prevent Sleep** in Home Assistant to enable battery-saving deep sleep cycles (duration configurable via the **Sleep Duration** entity in hours).
 * Enabling **OTA Mode** in Home Assistant automatically prevents deep sleep on boot for reliable wireless updates.
 
+### 🌦️ Home Assistant Sensor for "Ensuite : à xh" (`sensor.meteo_prochain_changement`)
+
+To display the time and weather icon for the next upcoming weather change in the **Outdoor** column, add this `template:` sensor to your Home Assistant `configuration.yaml` (replace `weather.forecast_home` with your own weather entity):
+
+```yaml
+template:
+  - trigger:
+      - trigger: time_pattern
+        minutes: "/15"
+      - trigger: homeassistant
+        event: start
+    action:
+      - action: weather.get_forecasts
+        target:
+          entity_id: weather.forecast_home
+        data:
+          type: hourly
+        response_variable: hourly_forecast
+    sensor:
+      - name: "Meteo Prochain Changement"
+        unique_id: meteo_prochain_changement
+        icon: mdi:weather-partly-cloudy
+        state: >
+          {% set current = states('weather.forecast_home') %}
+          {% set forecasts = hourly_forecast['weather.forecast_home'].forecast %}
+          {% set ns = namespace(found=false, result='--') %}
+          {% for item in forecasts %}
+            {% if not ns.found and as_datetime(item.datetime) > now() and item.condition != current %}
+              {% set hour = as_local(as_datetime(item.datetime)).strftime('%Hh') %}
+              {% set ns.result = hour ~ ' ' ~ item.condition %}
+              {% set ns.found = true %}
+            {% endif %}
+          {% endfor %}
+          {{ ns.result }}
+```
+
+> **How it works**: Every 15 minutes, Home Assistant scans the hourly forecast and outputs the first hour where the weather condition changes (e.g., `15h rainy`), which the ESP32 automatically renders as **`Ensuite : à 15h`** alongside the matching weather icon.
+
 ---
 
 ## 🇫🇷 Français
