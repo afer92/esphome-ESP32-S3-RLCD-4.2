@@ -144,6 +144,45 @@ Avant de compiler et flasher `esp32s3rlcd.yaml`, adaptez les éléments suivants
 
 ---
 
+### 🌦️ Capteur Home Assistant pour « Ensuite : à xh » (`sensor.meteo_prochain_changement`)
+
+Pour afficher l'heure et l'icône du prochain changement de météo dans la colonne **Extérieur**, ajoutez ce capteur `template:` dans le fichier `configuration.yaml` de Home Assistant (en remplaçant `weather.forecast_home` par votre entité météo) :
+
+```yaml
+template:
+  - trigger:
+      - trigger: time_pattern
+        minutes: "/15"
+      - trigger: homeassistant
+        event: start
+    action:
+      - action: weather.get_forecasts
+        target:
+          entity_id: weather.forecast_home
+        data:
+          type: hourly
+        response_variable: hourly_forecast
+    sensor:
+      - name: "Meteo Prochain Changement"
+        unique_id: meteo_prochain_changement
+        icon: mdi:weather-partly-cloudy
+        state: >
+          {% set current = states('weather.forecast_home') %}
+          {% set forecasts = hourly_forecast['weather.forecast_home'].forecast %}
+          {% set ns = namespace(found=false, result='--') %}
+          {% for item in forecasts %}
+            {% if not ns.found and as_datetime(item.datetime) > now() and item.condition != current %}
+              {% set hour = as_local(as_datetime(item.datetime)).strftime('%Hh') %}
+              {% set ns.result = hour ~ ' ' ~ item.condition %}
+              {% set ns.found = true %}
+            {% endif %}
+          {% endfor %}
+          {{ ns.result }}
+```
+
+> **Fonctionnement** : Toutes les 15 minutes, Home Assistant parcourt les prévisions horaires à venir et renvoie la première heure où le temps change (ex. `15h rainy`), que l'ESP32 convertit automatiquement en **`Ensuite : à 15h`** accompagné de l'icône correspondante.
+
+
 ## 📄 License / Licence
 
 This project is open-source and available under the MIT License.
