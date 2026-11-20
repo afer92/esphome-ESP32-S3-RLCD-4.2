@@ -16,10 +16,10 @@ This setup turns the board into a low-power indoor/outdoor weather station and a
 
 * **4.2" Reflective LCD (`st7305`)**: Uses the native ESPHome `st7305` display driver (ESPHome **2026.11.0+**).
 * **Indoor Climate**: Reads local temperature and humidity via the onboard **SHTC3** I2C sensor.
-* **Outdoor Weather**: Fetches outdoor temperature, humidity, and weather condition icons directly from a Home Assistant `weather` entity.
-* **Network & Status Header/Footer**: Displays Wi-Fi connection status, microphone mute indicator, connected SSID, IP address, and RTC-backed date/time (`pcf85063`).
-* **Battery Monitoring & Deep Sleep**: Tracks battery voltage and percentage with a visual progress bar, plus configurable deep sleep cycles controlled from Home Assistant.
-* **Home Assistant Voice Assistant**: Supports onboard wake word detection (`micro_wake_word` with *"Hey Jarvis"*), ES8311 DAC audio playback, ES7210 ADC microphone input, and hardware buttons.
+* **Outdoor Weather**: Fetches outdoor temperature, humidity, wind speed/direction, and weather condition icons directly from a Home Assistant `weather` entity, plus the next upcoming weather change (`Ensuite : à xh`).
+* **Network & Status Header/Footer**: Displays Wi-Fi connection status (RSSI), active/muted microphone indicator, connected SSID, IP address, and RTC-backed date/time (`pcf85063`).
+* **Battery Monitoring & Deep Sleep**: Tracks battery voltage and percentage with a dynamic progress bar, plus configurable deep sleep cycles controlled from Home Assistant.
+* **Home Assistant Voice Assistant**: Supports onboard wake word detection (`micro_wake_word` with *"Okay Nabu"*), ES8311 DAC audio playback, ES7210 ADC microphone input, and hardware buttons.
 
 ### 📋 Requirements
 
@@ -37,16 +37,19 @@ Before compiling and flashing `esp32s3rlcd.yaml`, update the following parameter
    wifi_password: "Your_WiFi_Password"
    ```
 
-2. **Static IP Address** — Update or remove the `manual_ip` section under `wifi:`:
+2. **Static IP Address** — Update or remove the `manual_ip` section under `wifi:` (add `dns1:` if domain resolution is needed):
    ```yaml
    wifi:
      manual_ip:
        static_ip: 192.168.0.102
        gateway: 192.168.0.254
        subnet: 255.255.255.0
+       dns1: 192.168.0.254
    ```
 
-3. **Home Assistant Entities**:
+3. **Home Assistant Local URL (Required for TTS Audio)** — In Home Assistant, go to **Settings → System → Network** and set your local IP address under **Local Network** (e.g., `http://0.xxx`). Without this, Home Assistant may send an external URL that the ESP32 cannot reach locally.
+
+4. **Home Assistant Entities**:
    * **Weather Entity**: Update `.variables` at the top of the file:
      ```yaml
      .variables:
@@ -82,6 +85,8 @@ template:
   - trigger:
       - trigger: time_pattern
         minutes: "/15"
+      - trigger: state
+        entity_id: weather.forecast_home
       - trigger: homeassistant
         event: start
     action:
@@ -98,8 +103,8 @@ template:
         state: >
           {% set current = states('weather.forecast_home') %}
           {% set forecasts = hourly_forecast['weather.forecast_home'].forecast %}
-          {% set ns = namespace(found=false, result='--') %}
-          {% for item in forecasts %}
+          {% set ns = namespace(found=false, result='Stable 24h') %}
+          {% for item in forecasts[:24] %}
             {% if not ns.found and as_datetime(item.datetime) > now() and item.condition != current %}
               {% set hour = as_local(as_datetime(item.datetime)).strftime('%Hh') %}
               {% set ns.result = hour ~ ' ' ~ item.condition %}
@@ -109,7 +114,7 @@ template:
           {{ ns.result }}
 ```
 
-> **How it works**: Every 15 minutes, Home Assistant scans the hourly forecast and outputs the first hour where the weather condition changes (e.g., `15h rainy`), which the ESP32 automatically renders as **`Ensuite : à 15h`** alongside the matching weather icon.
+> **How it works**: Every 15 minutes (or whenever the weather entity updates), Home Assistant scans the next 24 hourly forecasts and outputs the first hour where the weather condition changes (e.g., `15h rainy`), which the ESP32 automatically renders as **`Ensuite : à 15h`** alongside the matching weather icon.
 
 ---
 
