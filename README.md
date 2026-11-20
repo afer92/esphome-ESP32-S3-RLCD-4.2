@@ -50,7 +50,7 @@ Before compiling and flashing `esp32s3rlcd.yaml`, update the following parameter
    * **Weather Entity**: Update `.variables` at the top of the file:
      ```yaml
      .variables:
-       - &weather_entity "weather.forecast_home"
+       - &weather_entity "weather.city"
      ```
    * **OTA Mode Helper**: Create an `input_boolean` in Home Assistant to block deep sleep during updates, and set its ID under `binary_sensor:`:
      ```yaml
