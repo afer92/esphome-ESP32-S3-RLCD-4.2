@@ -5,6 +5,878 @@
 substitutions:
   name: "waveshare-esp32-s3-rlcd-42"
   friendly_name: "Waveshare ESP32-S3-RLCD-4.2"
+#=============================================================
+# Basic Configuration
+#=============================================================
+
+substitutions:
+  name: "waveshare-esp32-s3-rlcd-42"
+  friendly_name: "Waveshare ESP32-S3-RLCD-4.2"
+
+.variables:
+  - &weather_entity "weather.city"
+
+esphome:
+  name: "${name}"
+  friendly_name: "${friendly_name}"
+
+  on_boot:
+    - priority: 999.0
+      then:
+        - lambda: |-
+            id(deep_sleep_1).set_sleep_duration(id(deep_sleep_sleep_duration).state * 60 * 60 * 1000);
+            id(deep_sleep_1).set_run_duration(90 * 1000);
+        - if:
+            condition:
+              or:
+                - binary_sensor.is_on: ota_mode
+                - switch.is_on: prevent_sleep
+            then:
+              - lambda: |- 
+                  ESP_LOGW("Apollo", "Preventing Deep Sleep Due To OTA On Boot");
+                  id(deep_sleep_1).prevent_deep_sleep();
+
+  on_shutdown:
+    then:
+      - switch.turn_off: speaker_enable # Coupe l'alimentation de l'ampli audio
+      - micro_wake_word.stop:
+      - globals.set:
+          id: gtemp
+          value: !lambda 'return id(temp_sensor).state;'
+      - globals.set:
+          id: ghum
+          value: !lambda 'return id(hum_sensor).state;'
+      - globals.set:
+          id: gbat
+          value: !lambda 'return id(bat_level).state;' 
+      - globals.set:
+          id: gvolt
+          value: !lambda 'return id(bat_voltage).state;'
+      - if:
+          condition:
+            lambda: 'return id(ha_weather_temperature).has_state();'
+          then:
+            - globals.set:
+                id: gweather_temp
+                value: !lambda 'return id(ha_weather_temperature).state;' 
+      - if:
+          condition:
+            lambda: 'return id(ha_weather_humidity).has_state();'
+          then:
+            - globals.set:
+                id: gweather_hum
+                value: !lambda 'return id(ha_weather_humidity).state;'
+      - if:
+          condition:
+            lambda: 'return id(ha_weather_wind).has_state();'
+          then:
+            - globals.set:
+                id: gweather_wind
+                value: !lambda 'return id(ha_weather_wind).state;'
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+logger:
+
+wifi:
+  id: wifi_component
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: true # Se connecte directement sans scanner tous les canaux
+  manual_ip:
+    static_ip: 192.168.0.102 # Remplacez par une IP libre de votre réseau
+    gateway: 192.168.0.254
+    subnet: 255.255.255.0
+  on_connect:
+    - pcf85063.write_time:
+    - component.update: my_display
+  on_disconnect:
+    - component.update: my_display
+
+#=============================================================
+# Globals
+#=============================================================
+
+globals:
+  - id: gtemp
+    type: float
+    restore_value: yes
+    initial_value: "0.0"
+  - id: ghum
+    type: float
+    restore_value: yes
+    initial_value: "0.0"
+  - id: gbat
+    type: float
+    restore_value: yes
+    initial_value: "0.0"
+  - id: gvolt
+    type: float
+    restore_value: yes
+    initial_value: "0.0"
+  - id: gweather
+    type: int
+    restore_value: yes
+    initial_value: "0"
+  - id: gweather_temp
+    type: float
+    restore_value: yes
+    initial_value: "-999.0"
+  - id: gweather_hum
+    type: float
+    restore_value: yes
+    initial_value: "-1.0"
+  - id: gweather_wind
+    type: float
+    restore_value: yes
+    initial_value: "-1.0"
+  - id: gweather_wind_dir
+    type: int
+    restore_value: yes
+    initial_value: "-1"
+  - id: gweather_next
+    type: std::string
+    restore_value: yes
+    initial_value: '"--"'
+    
+#=============================================================
+# RTC
+#=============================================================
+
+time:
+  - platform: pcf85063
+    # repeated synchronization is not necessary unless the external RTC
+    # is much more accurate than the internal clock
+    update_interval: never
+  - platform: homeassistant
+    id: esptime
+    # instead try to synchronize via network repeatedly ...
+    on_time_sync:
+      then:
+        # ... and update the RTC when the synchronization was successful
+        pcf85063.write_time:
+    
+#=============================================================
+# I2C Bus Shared by SHTC3 sensor, ES8311 DAC, and ES7210 ADC
+#=============================================================
+    
+i2c:
+  sda: GPIO13
+  scl: GPIO14
+  scan: true
+  id: bus_a
+
+
+#=============================================================
+# Display — ST7305 RLCD
+#=============================================================
+
+spi:
+  clk_pin: GPIO11
+  mosi_pin: GPIO12
+
+font:
+  - file: "gfonts://Roboto"
+    id: font_label
+    size: 16
+    glyphs: &ma_glyphs
+      - " "
+      - "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+      - "abcdefghijklmnopqrstuvwxyz"
+      - "0123456789"
+      - ".,;:!?-_/\\()[]{}<>|@#&+=*\"'%"
+      - "°"
+      - "àâäáãåçéèêëíìîïñóòôöõúùûüýÿ"
+      - "ÀÂÄÁÃÅÇÉÈÊËÍÌÎÏÑÓÒÔÖÕÚÙÛÜÝ"
+      - "`œŒæÆ"
+
+  - file: "gfonts://Roboto@700"
+    id: font_value
+    size: 56
+    glyphs: *ma_glyphs
+
+  - file: "gfonts://Roboto@700"
+    id: font_humidity
+    size: 42
+    glyphs: *ma_glyphs
+
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: font_mdi_humidity
+    size: 32
+    glyphs:
+      - "\U000F058C" # water (icône humidité intérieure)
+
+  - file: "gfonts://Roboto"
+    id: font_title
+    size: 20
+    glyphs: *ma_glyphs
+
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: font_mdi_weather
+    size: 42
+    glyphs:
+      - "\U000F0590" # weather-cloudy
+      - "\U000F0599" # weather-sunny
+      - "\U000F0595" # weather-partly-cloudy
+      - "\U000F0597" # weather-rainy
+      - "\U000F0596" # weather-pouring
+      - "\U000F0598" # weather-snowy
+      - "\U000F0593" # weather-lightning
+      - "\U000F0592" # weather-fog
+      - "\U000F059D" # weather-windy
+      - "\U000F0591" # weather-night
+
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: font_mdi_status
+    size: 24
+    glyphs:
+      - "\U000F036D" # microphone-off
+      - "\U000F0928" # wifi-strength-4
+      - "\U000F0925" # wifi-strength-3
+      - "\U000F0922" # wifi-strength-2
+      - "\U000F091F" # wifi-strength-1
+      - "\U000F092F" # wifi-strength-outline
+      - "\U000F05AA" # wifi-off
+      - "\U000F058C" # water (humidité intérieure)
+      - "\U000F02DC" # home (icône Intérieur)
+      - "\U000F0405" # pine-tree (icône Extérieur)
+      - "\U000F0079" # battery (icône Batterie)
+
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: font_mdi_inline
+    size: 19
+    glyphs:
+      - "\U000F058C" # water (humidité extérieure)
+      - "\U000F059D" # weather-windy (vent extérieur)
+
+  - file: "gfonts://Roboto"
+    id: font_small
+    size: 13
+    glyphs: *ma_glyphs
+
+color:
+  - id: my_gray
+    red: 50%
+    green: 50%
+    blue: 50%
+  - id: my_black
+    red: 0%
+    green: 0%
+    blue: 0%
+
+display:
+  - platform: st7305
+    model: WAVESHARE-400X300
+    id: my_display
+    cs_pin: GPIO40
+    dc_pin: GPIO5
+    reset_pin: GPIO41
+    update_interval: 1min
+    lambda: |-
+      char buf[32];
+      int x1, y1, w, h;
+
+      // 1. Remplir l'écran en blanc (fond)
+      it.fill(Color::WHITE);
+
+      // 2. Barre de titre noire (0 -> 40 px)
+      it.filled_rectangle(0, 0, 400, 40, Color::BLACK);
+      it.print(200, 20, id(font_title), Color::WHITE, TextAlign::CENTER, "ESP32-S3-RLCD-4.2");
+
+      if (id(mute_switch).state) {
+        it.print(12, 20, id(font_mdi_status), Color::WHITE, TextAlign::CENTER_LEFT, "\U000F036D");
+      }
+
+      if (id(wifi_component).is_connected()) {
+        float rssi = id(wifi_signal_db).has_state() ? id(wifi_signal_db).state : -100.0f;
+        const char* wifi_icon = "\U000F0928";
+        if (rssi >= -55.0f) {
+          wifi_icon = "\U000F0928";
+        } else if (rssi >= -67.0f) {
+          wifi_icon = "\U000F0925";
+        } else if (rssi >= -75.0f) {
+          wifi_icon = "\U000F0922";
+        } else if (rssi >= -85.0f) {
+          wifi_icon = "\U000F091F";
+        } else {
+          wifi_icon = "\U000F092F";
+        }
+        it.print(388, 20, id(font_mdi_status), Color::WHITE, TextAlign::CENTER_RIGHT, wifi_icon);
+      } else {
+        it.print(388, 20, id(font_mdi_status), Color::WHITE, TextAlign::CENTER_RIGHT, "\U000F05AA");
+      }
+
+      // Séparateurs principaux (Zone 2 : 40 -> 215 px)
+      it.line(200, 40, 200, 215, Color::BLACK);
+      it.line(0, 215, 400, 215, Color::BLACK);
+      it.line(0, 245, 400, 245, Color::BLACK);
+
+      // 2A. Colonne Gauche : INTÉRIEUR (x = 0 -> 200, y = 40 -> 215)
+      it.print(15, 48, id(font_mdi_status), Color::BLACK, "\U000F02DC"); // Icône Maison
+
+      float t_in = id(temp_sensor).has_state() ? id(temp_sensor).state : id(gtemp);
+      snprintf(buf, sizeof(buf), "%.1f", t_in);
+      it.print(15, 78, id(font_value), Color::BLACK, buf);
+      it.get_text_bounds(15, 78, buf, id(font_value), TextAlign::TOP_LEFT, &x1, &y1, &w, &h);
+      it.print(15 + w + 4, 86, id(font_label), Color::BLACK, "°C");
+
+      // Humidité intérieure : Icône goutte d'eau (32 px) + valeur en très grand (42 px)
+      float h_in = id(hum_sensor).has_state() ? id(hum_sensor).state : id(ghum);
+      it.print(15, 178, id(font_mdi_humidity), Color::BLACK, TextAlign::CENTER_LEFT, "\U000F058C");
+      snprintf(buf, sizeof(buf), "%.0f %%", h_in);
+      it.print(50, 178, id(font_humidity), Color::BLACK, TextAlign::CENTER_LEFT, buf);
+
+      // 2B. Colonne Droite : EXTÉRIEUR (x = 200 -> 400, y = 40 -> 215)
+      it.print(215, 48, id(font_mdi_status), Color::BLACK, "\U000F0405"); // Icône Sapin (Extérieur)
+
+      if (id(ha_weather_temperature).has_state()) {
+        snprintf(buf, sizeof(buf), "%.1f", id(ha_weather_temperature).state);
+      } else if (id(gweather_temp) > -100.0f) {
+        snprintf(buf, sizeof(buf), "%.1f", id(gweather_temp));
+      } else {
+        snprintf(buf, sizeof(buf), "--.-");
+      }
+      it.print(212, 74, id(font_value), Color::BLACK, buf);
+      it.get_text_bounds(212, 74, buf, id(font_value), TextAlign::TOP_LEFT, &x1, &y1, &w, &h);
+      it.print(212 + w + 3, 82, id(font_label), Color::BLACK, "°C");
+
+      // Icône météo calée à droite
+      const char* weather_icons[] = {
+        "\U000F0590", "\U000F0599", "\U000F0595", "\U000F0597", "\U000F0596",
+        "\U000F0598", "\U000F0593", "\U000F0592", "\U000F059D", "\U000F0591"
+      };
+      int w_idx = (id(gweather) >= 0 && id(gweather) <= 9) ? id(gweather) : 0;
+      it.print(392, 74, id(font_mdi_weather), Color::BLACK, TextAlign::TOP_RIGHT, weather_icons[w_idx]);
+
+      // Ligne 1 (y = 142) : Icône goutte d'eau + Humidité extérieure (font_label)
+      it.print(215, 142, id(font_mdi_inline), Color::BLACK, TextAlign::CENTER_LEFT, "\U000F058C");
+      if (id(ha_weather_humidity).has_state()) {
+        it.printf(239, 142, id(font_label), Color::BLACK, TextAlign::CENTER_LEFT, "%.0f %%", id(ha_weather_humidity).state);
+      } else if (id(gweather_hum) >= 0.0f) {
+        it.printf(239, 142, id(font_label), Color::BLACK, TextAlign::CENTER_LEFT, "%.0f %%", id(gweather_hum));
+      } else {
+        it.print(239, 142, id(font_label), Color::BLACK, TextAlign::CENTER_LEFT, "-- %");
+      }
+
+      // Ligne 2 (y = 164) : Icône vent + Vitesse et direction (font_label)
+      const char* wind_dirs[] = { "N", "NE", "E", "SE", "S", "SO", "O", "NO" };
+      const char* dir_str = (id(gweather_wind_dir) >= 0 && id(gweather_wind_dir) <= 7) ? wind_dirs[id(gweather_wind_dir)] : "--";
+      it.print(215, 164, id(font_mdi_inline), Color::BLACK, TextAlign::CENTER_LEFT, "\U000F059D");
+      if (id(ha_weather_wind).has_state()) {
+        it.printf(239, 164, id(font_label), Color::BLACK, TextAlign::CENTER_LEFT, "%.0f km/h (%s)", id(ha_weather_wind).state, dir_str);
+      } else if (id(gweather_wind) >= 0.0f) {
+        it.printf(239, 164, id(font_label), Color::BLACK, TextAlign::CENTER_LEFT, "%.0f km/h (%s)", id(gweather_wind), dir_str);
+      } else {
+        it.print(239, 164, id(font_label), Color::BLACK, TextAlign::CENTER_LEFT, "-- km/h");
+      }
+
+      // Ligne 3 (y = 188) : Prochain changement de météo (font_label)
+      std::string next_str = id(ha_weather_next).has_state() ? id(ha_weather_next).state : id(gweather_next);
+      it.printf(215, 188, id(font_label), Color::BLACK, TextAlign::CENTER_LEFT, "Ensuite : %s", next_str.c_str());
+
+      // 3. Zone Batterie avec icône et largeur de jauge calculée dynamiquement (215 -> 245 px)
+      const char* bat_icon = "\U000F0079"; // mdi:battery
+      it.print(15, 230, id(font_mdi_status), Color::BLACK, TextAlign::CENTER_LEFT, bat_icon);
+      it.get_text_bounds(15, 230, bat_icon, id(font_mdi_status), TextAlign::CENTER_LEFT, &x1, &y1, &w, &h);
+      int bx = 15 + w + 8;
+
+      float current_bat = id(bat_level).has_state() ? id(bat_level).state : id(gbat);
+      float current_volt = id(bat_voltage).has_state() ? id(bat_voltage).state : id(gvolt);
+      snprintf(buf, sizeof(buf), "%.2fV (%.0f%%)", current_volt, current_bat);
+      it.print(385, 230, id(font_label), Color::BLACK, TextAlign::CENTER_RIGHT, buf);
+      it.get_text_bounds(385, 230, buf, id(font_label), TextAlign::CENTER_RIGHT, &x1, &y1, &w, &h);
+
+      int bw = (385 - w - 14) - bx;
+      int by = 222, bh = 16;
+
+      if (bw > 20) {
+        it.rectangle(bx, by, bw, bh, Color::BLACK);
+        it.filled_rectangle(bx + bw, by + 4, 3, bh - 8, Color::BLACK);
+
+        float clamped_bat = (current_bat < 0.0f) ? 0.0f : ((current_bat > 100.0f) ? 100.0f : current_bat);
+        int fill = (int)((bw - 4) * clamped_bat / 100.0f);
+        if (fill > 0) {
+          it.filled_rectangle(bx + 2, by + 2, fill, bh - 4, Color::BLACK);
+        }
+      }
+
+      // 4. Pied de page : Heure à gauche, SSID + IP au centre, Date à droite (245 -> 300 px)
+      auto now = id(esptime).now();
+      if (now.is_valid()) {
+        it.strftime(15, 262, id(font_label), Color::BLACK, TextAlign::TOP_LEFT, "%H:%M", now);
+        it.strftime(385, 262, id(font_label), Color::BLACK, TextAlign::TOP_RIGHT, "%d/%m/%Y", now);
+      } else {
+        it.print(15, 262, id(font_label), Color::BLACK, TextAlign::TOP_LEFT, "--:--");
+        it.print(385, 262, id(font_label), Color::BLACK, TextAlign::TOP_RIGHT, "--/--/----");
+      }
+
+      if (id(wifi_component).is_connected()) {
+        if (id(wifi_ssid_sensor).has_state()) {
+          it.printf(200, 254, id(font_small), Color::BLACK, TextAlign::TOP_CENTER, "%s", id(wifi_ssid_sensor).state.c_str());
+        }
+        if (id(wifi_ip).has_state()) {
+          it.printf(200, 272, id(font_small), Color::BLACK, TextAlign::TOP_CENTER, "%s", id(wifi_ip).state.c_str());
+        }
+      } else {
+        it.print(200, 265, id(font_small), Color::BLACK, TextAlign::TOP_CENTER, "Déconnecté");
+      }
+
+
+#=============================================================
+# Audio — I2S, ES8311 DAC, ES7210 ADC
+#=============================================================
+
+i2s_audio:
+  - id: i2s_shared
+    i2s_lrclk_pin: GPIO45
+    i2s_bclk_pin: GPIO9
+    i2s_mclk_pin: GPIO16
+
+audio_dac:
+  - platform: es8311
+    id: es8311_dac
+    bits_per_sample: 16bit
+    sample_rate: 16000
+
+audio_adc:
+  - platform: es7210
+    id: es7210_adc
+    bits_per_sample: 16bit
+    sample_rate: 16000
+    mic_gain: 24dB
+
+microphone:
+  - platform: i2s_audio
+    id: va_mic
+    i2s_audio_id: i2s_shared
+    i2s_din_pin: GPIO10
+    adc_type: external
+    sample_rate: 16000
+    bits_per_sample: 16bit
+    pdm: false
+
+    
+#=============================================================
+# Battery Monitoring
+#=============================================================
+
+deep_sleep:
+  id: deep_sleep_1
+  sleep_duration: 57min
+  run_duration: 3min
+  wakeup_pin:
+    number: GPIO18
+    inverted: true
+    allow_other_uses: true
+    mode:
+      input: true
+      pullup: true
+  wakeup_pin_mode: KEEP_AWAKE
+
+sensor:
+  - platform: adc
+    id: bat_voltage
+    name: "Battery Voltage"
+    pin: GPIO4
+    attenuation: 12db
+    update_interval: 60s
+    filters:
+      - multiply: 3.0
+
+  - platform: copy
+    source_id: bat_voltage
+    id: bat_level
+    name: "Battery Level"
+    unit_of_measurement: "%"
+    filters:
+      - calibrate_linear:
+          method: exact
+          datapoints:
+          #- 2.5 -> 0.0
+          #- 4.2 -> 100.0
+          - 2.95 -> 2.0
+          - 3.05 -> 4.0
+          - 3.23 -> 10.0
+          - 3.35 -> 16.0
+          - 3.42 -> 20.0
+          - 3.50 -> 30.0
+          - 3.54 -> 40.0
+          - 3.65 -> 50.0
+          - 3.74 -> 60.0
+          - 3.84 -> 70.0
+          - 3.94 -> 80.0
+          - 4.026 -> 90.0
+          - 4.056 -> 96.0
+          - 4.07  -> 99.0
+          - 4.16  -> 100.0
+          
+      - clamp:
+          min_value: 0
+          max_value: 100
+#----------------------------
+  - platform: homeassistant
+    id: ha_weather_temperature
+    entity_id: *weather_entity # On appelle l'ancre ici avec une astérisque
+    attribute: temperature
+    internal: false # Nécessaire pour appliquer des filtres sur un capteur importé
+    filters:
+      - throttle: 15min # Ne prend la valeur que toutes les 15 minutes
+
+  - platform: homeassistant
+    id: ha_weather_humidity
+    entity_id: *weather_entity
+    attribute: humidity
+    internal: false
+    filters:
+      - throttle: 15min
+
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    id: wifi_signal_db
+    update_interval: 60s
+    entity_category: "diagnostic"
+    on_value:
+      - component.update: my_display
+        
+  - platform: homeassistant
+    id: ha_weather_wind
+    entity_id: *weather_entity
+    attribute: wind_speed
+    internal: false
+    filters:
+      - throttle: 15min
+        
+  - platform: homeassistant
+    id: ha_weather_wind_bearing
+    entity_id: *weather_entity
+    attribute: wind_bearing
+    internal: false
+    filters:
+      - throttle: 15min
+    on_value:
+      - lambda: |-
+          // Convertit 0-360° en 8 secteurs de 45° (0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SO, 6=O, 7=NO)
+          int idx = ((int)((x + 22.5f) / 45.0f)) % 8;
+          if (idx < 0) idx += 8;
+          id(gweather_wind_dir) = idx;
+        
+#----------------------------
+
+#=============================================================
+# SHTC3 Temperature and Humidity
+#=============================================================
+
+  - platform: shtcx
+    temperature:
+      id: temp_sensor
+      name: "Temperature"
+      filters:
+        - offset: -3.0
+    humidity:
+      id: hum_sensor
+      name: "Humidity"
+      filters:
+        - offset: 10.0
+    address: 0x70
+    update_interval: 60s
+    i2c_id: bus_a
+
+text_sensor:
+  - platform: homeassistant
+    id: ha_weather_condition
+    entity_id: *weather_entity
+    on_value:
+      - lambda: |-
+          if (x == "sunny" || x == "clear") {
+            id(gweather) = 1;
+          } else if (x == "partlycloudy") {
+            id(gweather) = 2;
+          } else if (x == "cloudy") {
+            id(gweather) = 0;
+          } else if (x == "rainy") {
+            id(gweather) = 3;
+          } else if (x == "pouring") {
+            id(gweather) = 4;
+          } else if (x == "snowy") {
+            id(gweather) = 5;
+          } else if (x == "lightning" || x == "lightning-rainy") {
+            id(gweather) = 6;
+          } else if (x == "hail") {
+            id(gweather) = 7;
+          } else if (x == "windy" || x == "windy-variant") {
+            id(gweather) = 8;
+          } else if (x == "fog") {
+            id(gweather) = 9;
+          } else {
+            id(gweather) = 0;
+          }
+
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+      id: wifi_ip
+      on_value:
+        - component.update: my_display
+    ssid:
+      name: "Connected SSID"
+      id: wifi_ssid_sensor
+      on_value:
+        - component.update: my_display          
+
+  - platform: homeassistant
+    id: ha_weather_next
+    entity_id: sensor.meteo_prochain_changement
+    on_value:
+      - globals.set:
+          id: gweather_next
+          value: !lambda 'return x;'
+      - component.update: my_display          
+          
+#=============================================================
+# Voice Assistant Configuration
+#=============================================================
+
+api:
+
+ota:
+  - platform: esphome
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+    components:
+      - espressif/esp-nn==1.1.2
+
+speaker:
+  - platform: i2s_audio
+    id: i2s_audio_speaker
+    i2s_audio_id: i2s_shared
+    i2s_dout_pin: GPIO8
+    dac_type: external
+    audio_dac: es8311_dac
+    channel: stereo
+    sample_rate: 16000
+    bits_per_sample: 16bit
+    buffer_duration: 100ms
+    timeout: never
+
+  - platform: resampler
+    id: announcement_speaker
+    output_speaker: i2s_audio_speaker
+
+media_player:
+  - platform: speaker
+    id: speaker_media_player
+    name: None
+    announcement_pipeline:
+      speaker: announcement_speaker
+      format: FLAC
+      sample_rate: 16000
+      num_channels: 1
+    files:
+      - id: wake_word_triggered_sound
+        file: https://github.com/esphome/home-assistant-voice-pe/raw/dev/sounds/wake_word_triggered.flac
+
+micro_wake_word:
+  id: mww
+  microphone:
+    microphone: va_mic
+    channels: 0
+    gain_factor: 4
+  vad:
+  models:
+    - model: hey_jarvis
+  on_wake_word_detected:
+    - media_player.speaker.play_on_device_media_file:
+        media_file: wake_word_triggered_sound
+        announcement: true
+    - delay: 300ms
+    - voice_assistant.start:
+        wake_word: !lambda return wake_word;
+
+voice_assistant:
+  id: va
+  microphone:
+    microphone: va_mic
+    channels: 0
+    gain_factor: 4
+  media_player: speaker_media_player
+  micro_wake_word: mww
+  use_wake_word: false
+  noise_suppression_level: 2
+  auto_gain: 31dBFS
+  on_error:
+    - script.execute: restart_mww
+  on_end:
+    - script.execute: restart_mww
+  on_client_connected:
+    - micro_wake_word.start:
+  on_client_disconnected:
+    - micro_wake_word.stop:
+
+script:
+  - id: restart_mww
+    then:
+      - delay: 500ms
+      - wait_until:
+          not:
+            media_player.is_announcing:
+      - wait_until:
+          not:
+            speaker.is_playing:
+              id: i2s_audio_speaker
+      - delay: 200ms
+      - micro_wake_word.start:
+
+switch:
+  - platform: gpio
+    id: speaker_enable
+    name: "Speaker Enable"
+    pin: GPIO46
+    restore_mode: RESTORE_DEFAULT_ON
+
+  - platform: template
+    name: "Mute"
+    id: mute_switch
+    icon: mdi:microphone-off
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_on:
+      - micro_wake_word.stop:
+      - voice_assistant.stop:
+      - component.update: my_display
+    on_turn_off:
+      - component.update: my_display
+      - if:
+          condition:
+            switch.is_on: use_wake_word_switch
+          then:
+            - micro_wake_word.start:
+
+  - platform: template
+    name: "Use Wake Word"
+    id: use_wake_word_switch
+    icon: mdi:chat-processing
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      - if:
+          condition:
+            not:
+              switch.is_on: mute_switch
+          then:
+            - micro_wake_word.start:
+    on_turn_off:
+      - micro_wake_word.stop:
+
+  - platform: template
+    name: "Prevent Sleep"
+    id: prevent_sleep
+    icon: mdi:sleep
+    restore_mode: RESTORE_DEFAULT_ON
+    optimistic: true
+    entity_category: "config"
+    on_turn_on:
+      then:
+        - lambda: |- 
+            id(deep_sleep_1).prevent_deep_sleep();
+    on_turn_off:
+      then:
+        - if:
+            condition:
+              binary_sensor.is_off: ota_mode
+            then:
+              - lambda: |- 
+                  id(deep_sleep_1).allow_deep_sleep();
+
+# RTTTL ringtone: synthesized and played directly through the speaker
+rtttl:
+  speaker: i2s_audio_speaker
+  gain: 80%
+
+button:
+  - platform: template
+    name: "Play Tune"
+    on_press:
+      - rtttl.play: "NokiaTune:d=4,o=5,b=225:8e6,8d6,4f#,4g#,8c#6,8b,4d,4e,8b,8a,4c#,4e,2a"
+  
+binary_sensor:
+  - platform: gpio
+    name: "Boot Button"
+    pin:
+      number: GPIO0
+      inverted: true
+      mode: INPUT
+    on_press:
+      - voice_assistant.start:
+    on_release:
+      - voice_assistant.stop:
+
+  - platform: gpio
+    name: "Key Button"
+    pin:
+      number: GPIO18
+      inverted: true
+      mode: INPUT
+      allow_other_uses: true
+    on_press:
+      - switch.toggle: mute_switch
+
+  - platform: homeassistant
+    name: "OTA Mode"
+    id: ota_mode
+    entity_id: input_boolean.ota_mod_ccb4fc
+    on_press:
+      then:
+        - lambda: |- 
+            id(deep_sleep_1).prevent_deep_sleep();
+    on_release:  
+      then:
+        - if:
+            condition:
+              switch.is_off: prevent_sleep
+            then:
+              - lambda: |- 
+                  id(deep_sleep_1).allow_deep_sleep();
+        
+number:
+  - platform: template
+    name: "TTS Volume"
+    id: tts_volume
+    icon: mdi:volume-high
+    min_value: 0
+    max_value: 100
+    step: 5
+    initial_value: 75
+    optimistic: true
+    restore_value: true
+    set_action:
+      then:
+        - media_player.volume_set:
+            id: speaker_media_player
+            volume: !lambda "return x / 100.0;"
+
+  - platform: template
+    name: "Sleep Duration"
+    id: deep_sleep_sleep_duration
+    min_value: 0
+    max_value: 800
+    step: 0.01
+    mode: box
+    update_interval: never
+    optimistic: true
+    restore_value: true
+    initial_value: 4
+    icon: "mdi:arrow-collapse-right"
+    entity_category: CONFIG
+    unit_of_measurement: "h"
+    on_value:
+      then:
+        - lambda: |-
+            id(deep_sleep_1).set_sleep_duration(x * 60 * 60 * 1000);
 
 .variables:
   - &weather_entity "weather.forecast_home"
