@@ -2,7 +2,7 @@
 
 🌐 **[English](#-english)** | **[Français](#-français)**
 
-![Screen](docs/screen.jpg)
+![Screen](docs/screen_uk.jpg)
 
 ---
 
@@ -117,6 +117,8 @@ template:
 > **How it works**: Every 15 minutes (or whenever the weather entity updates), Home Assistant scans the next 24 hourly forecasts and outputs the first hour where the weather condition changes (e.g., `15h rainy`), which the ESP32 automatically renders as **`Ensuite : à 15h`** alongside the matching weather icon.
 
 ---
+
+![Screen](docs/screen.jpg)
 
 ## 🇫🇷 Français
 
