@@ -2,7 +2,7 @@
 
 🌐 **[English](#-english)** | **[Français](#-français)**
 
-![Screen](docs/screen_uk.jpg)
+![Screen](docs/screen_en.jpg)
 
 ---
 
