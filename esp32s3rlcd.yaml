@@ -5,9 +5,30 @@
 substitutions:
   name: "waveshare-esp32-s3-rlcd-42"
   friendly_name: "Waveshare ESP32-S3-RLCD-4.2"
-
+  # --- LOCALISATION (FRANÇAIS) ---
+  txt_title: "ESP32-S3-RLCD-4.2"
+  txt_indoor: "INTÉRIEUR"
+  txt_outdoor: "EXTÉRIEUR"
+  txt_wind_dirs: '"N", "NE", "E", "SE", "S", "SO", "O", "NO"'
+  txt_next_prefix: "Ensuite : %s"
+  txt_next_at: "Ensuite : à %s"
+  txt_hour_suffix: "h"
+  txt_disconnected: "Déconnecté"
+  fmt_time: "%H:%M"
+  fmt_date: "%d/%m/%Y"
+  # --- EXEMPLE ANGLAIS (décommenter pour basculer) ---
+  # txt_indoor: "INDOOR"
+  # txt_outdoor: "OUTDOOR"
+  # txt_wind_dirs: '"N", "NE", "E", "SE", "S", "SW", "W", "NW"'
+  # txt_next_prefix: "Next: %s"
+  # txt_next_at: "Next: at %s"
+  # txt_hour_suffix: ":00"
+  # txt_disconnected: "Disconnected"
+  # fmt_time: "%H:%M"
+  # fmt_date: "%Y-%m-%d"
+  
 .variables:
-  - &weather_entity "weather.city"
+  - &weather_entity "weather.forecast_maison"
 
 esphome:
   name: "${name}"
@@ -304,7 +325,7 @@ display:
 
       // 2. Barre de titre noire (0 -> 40 px)
       it.filled_rectangle(0, 0, 400, 40, Color::BLACK);
-      it.print(200, 20, id(font_title), Color::WHITE, TextAlign::CENTER, "ESP32-S3-RLCD-4.2");
+      it.print(200, 20, id(font_title), Color::WHITE, TextAlign::CENTER, "${txt_title}");
 
       // Icône Micro en haut à gauche : Muet prioritaire, sinon Micro actif pendant l'écoute
       if (id(mute_switch).state) {
@@ -339,7 +360,7 @@ display:
 
       // 2A. Colonne Gauche : INTÉRIEUR (x = 0 -> 200, y = 40 -> 215)
       it.print(15, 58, id(font_mdi_status), Color::BLACK, TextAlign::CENTER_LEFT, "\U000F02DC");
-      it.print(44, 58, id(font_label), Color::BLACK, TextAlign::CENTER_LEFT, "INTÉRIEUR");
+      it.print(44, 58, id(font_label), Color::BLACK, TextAlign::CENTER_LEFT, "${txt_indoor}");
 
       float t_in = id(temp_sensor).has_state() ? id(temp_sensor).state : id(gtemp);
       snprintf(buf, sizeof(buf), "%.1f", t_in);
@@ -355,7 +376,7 @@ display:
 
       // 2B. Colonne Droite : EXTÉRIEUR (x = 200 -> 400, y = 40 -> 215)
       it.print(215, 58, id(font_mdi_status), Color::BLACK, TextAlign::CENTER_LEFT, "\U000F0405");
-      it.print(244, 58, id(font_label), Color::BLACK, TextAlign::CENTER_LEFT, "EXTÉRIEUR");
+      it.print(244, 58, id(font_label), Color::BLACK, TextAlign::CENTER_LEFT, "${txt_outdoor}");
 
       // Température extérieure
       if (id(ha_weather_temperature).has_state()) {
@@ -390,7 +411,7 @@ display:
       it.print(390 - w - 4, 122, id(font_mdi_inline), Color::BLACK, TextAlign::CENTER_RIGHT, "\U000F058C");
 
       // Vitesse et direction du vent (agrandi en font_medium 20 px + icône 24 px)
-      const char* wind_dirs[] = { "N", "NE", "E", "SE", "S", "SO", "O", "NO" };
+      const char* wind_dirs[] = { ${txt_wind_dirs} };
       const char* dir_str = (id(gweather_wind_dir) >= 0 && id(gweather_wind_dir) <= 7) ? wind_dirs[id(gweather_wind_dir)] : "--";
       it.print(215, 152, id(font_mdi_status), Color::BLACK, TextAlign::CENTER_LEFT, "\U000F059D");
       if (id(ha_weather_wind).has_state()) {
@@ -404,13 +425,13 @@ display:
       // Dernière ligne (y = 186) : "Ensuite : à xh" en font_medium (20 px) + icône météo (28 px)
       std::string next_str = id(ha_weather_next).has_state() ? id(ha_weather_next).state : id(gweather_next);
 
-      std::string next_hour = "--h";
+      std::string next_hour = "--${txt_hour_suffix}";
       for (size_t i = 0; i < next_str.length(); i++) {
         if (isdigit(next_str[i])) {
           size_t start = i;
           while (i < next_str.length() && isdigit(next_str[i])) i++;
           if (i < next_str.length() && (next_str[i] == 'h' || next_str[i] == 'H' || next_str[i] == ':')) {
-            next_hour = next_str.substr(start, i - start) + "h";
+            next_hour = next_str.substr(start, i - start) + "${txt_hour_suffix}";
             break;
           }
         }
@@ -440,15 +461,14 @@ display:
         next_w_idx = 9;
       }
 
-      if (next_hour == "--h") {
-        it.printf(215, 186, id(font_medium), Color::BLACK, TextAlign::CENTER_LEFT, "Ensuite : %s", next_str.c_str());
+      if (next_hour == "--${txt_hour_suffix}") {
+        it.printf(215, 186, id(font_medium), Color::BLACK, TextAlign::CENTER_LEFT, "${txt_next_prefix}", next_str.c_str());
       } else {
-        snprintf(buf, sizeof(buf), "Ensuite : à %s", next_hour.c_str());
+        snprintf(buf, sizeof(buf), "${txt_next_at}", next_hour.c_str());
         it.print(215, 186, id(font_medium), Color::BLACK, TextAlign::CENTER_LEFT, buf);
         it.get_text_bounds(215, 186, buf, id(font_medium), TextAlign::CENTER_LEFT, &x1, &y1, &w, &h);
         it.print(215 + w + 6, 186, id(font_mdi_weather_small), Color::BLACK, TextAlign::CENTER_LEFT, weather_icons[next_w_idx]);
       }
-
 
       // 3. Zone Batterie avec icône et largeur de jauge calculée dynamiquement (215 -> 245 px)
       const char* bat_icon = "\U000F0079"; // mdi:battery
@@ -470,6 +490,7 @@ display:
         it.filled_rectangle(bx + bw, by + 4, 3, bh - 8, Color::BLACK);
 
         float clamped_bat = (current_bat < 0.0f) ? 0.0f : ((current_bat > 100.0f) ? 100.0f : current_bat);
+
         int fill = (int)((bw - 4) * clamped_bat / 100.0f);
         if (fill > 0) {
           it.filled_rectangle(bx + 2, by + 2, fill, bh - 4, Color::BLACK);
@@ -479,8 +500,8 @@ display:
       // 4. Pied de page : Heure à gauche, SSID + IP au centre, Date à droite (245 -> 300 px)
       auto now = id(esptime).now();
       if (now.is_valid()) {
-        it.strftime(15, 262, id(font_label), Color::BLACK, TextAlign::TOP_LEFT, "%H:%M", now);
-        it.strftime(385, 262, id(font_label), Color::BLACK, TextAlign::TOP_RIGHT, "%d/%m/%Y", now);
+        it.strftime(15, 262, id(font_label), Color::BLACK, TextAlign::TOP_LEFT, "${fmt_time}", now);
+        it.strftime(385, 262, id(font_label), Color::BLACK, TextAlign::TOP_RIGHT, "${fmt_date}", now);
       } else {
         it.print(15, 262, id(font_label), Color::BLACK, TextAlign::TOP_LEFT, "--:--");
         it.print(385, 262, id(font_label), Color::BLACK, TextAlign::TOP_RIGHT, "--/--/----");
@@ -494,8 +515,9 @@ display:
           it.printf(200, 272, id(font_small), Color::BLACK, TextAlign::TOP_CENTER, "%s", id(wifi_ip).state.c_str());
         }
       } else {
-        it.print(200, 265, id(font_small), Color::BLACK, TextAlign::TOP_CENTER, "Déconnecté");
+        it.print(200, 265, id(font_small), Color::BLACK, TextAlign::TOP_CENTER, "${txt_disconnected}");
       }
+
 
 #=============================================================
 # Audio — I2S, ES8311 DAC, ES7210 ADC
